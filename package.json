@@ -1,0 +1,25 @@
+{
+  "name": "lms-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "lint": "npm run lint --workspace frontend",
+    "db:generate": "npm run db:generate --workspace backend",
+    "db:migrate": "npm run db:migrate --workspace backend",
+    "db:seed": "npm run db:seed --workspace backend"
+  },
+  "devDependencies": {
+    "@types/multer": "^2.3.0",
+    "concurrently": "^9.0.1"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "multer": "^2.4.0"
+  }
+}

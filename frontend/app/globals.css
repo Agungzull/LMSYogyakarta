@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply min-h-screen bg-slate-100 text-slate-900 antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+button,
+select,
+textarea {
+  @apply rounded-md border border-slate-300 px-3 py-2 outline-none transition;
+}
+
+button {
+  @apply cursor-pointer bg-blue-600 text-white hover:bg-blue-700;
+}

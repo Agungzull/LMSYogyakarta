@@ -1,0 +1,5 @@
+CREATE TYPE "QuestionType" AS ENUM ('SINGLE_CHOICE', 'MULTIPLE_CHOICE');
+
+ALTER TABLE "Question"
+ADD COLUMN "type" "QuestionType" NOT NULL DEFAULT 'SINGLE_CHOICE',
+ADD COLUMN "explanationImageUrl" TEXT;
