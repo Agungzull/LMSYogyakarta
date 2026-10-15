@@ -1,9 +1,7 @@
-import { createReadStream } from 'node:fs';
-import { access } from 'node:fs/promises';
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { materialFilePath } from '../lib/material-file-storage.js';
-import { tryoutExplanationFilePath } from '../lib/tryout-explanation-storage.js';
+import { readMaterialFile } from '../lib/material-file-storage.js';
+import { explanationContentType, readExplanationImage } from '../lib/tryout-explanation-storage.js';
 
 export async function getMaterialFile(req: Request, res: Response) {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -49,19 +47,18 @@ export async function getMaterialFile(req: Request, res: Response) {
     }
   }
 
-  const filePath = materialFilePath(id);
-  try {
-    await access(filePath);
-  } catch {
+  const file = await readMaterialFile(id);
+  if (!file) {
     return res.status(404).json({ success: false, message: 'File materi tidak ditemukan' });
   }
 
   const download = req.query.download === '1';
   res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', file.length);
   res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="materi-minggu-${material.weekNumber}.pdf"`);
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   res.setHeader('Cache-Control', 'private, no-store');
-  return createReadStream(filePath).pipe(res);
+  return res.end(file);
 }
 
 export async function getTryoutExplanationImage(req: Request, res: Response) {
@@ -95,17 +92,14 @@ export async function getTryoutExplanationImage(req: Request, res: Response) {
     }
   }
 
-  const filePath = tryoutExplanationFilePath(filename);
-  try {
-    await access(filePath);
-  } catch {
+  const file = await readExplanationImage(filename);
+  if (!file) {
     return res.status(404).json({ success: false, message: 'File gambar pembahasan tidak ditemukan' });
   }
 
-  const extension = filename.split('.').pop()?.toLowerCase();
-  const contentType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
-  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Type', explanationContentType(filename));
+  res.setHeader('Content-Length', file.length);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  return createReadStream(filePath).pipe(res);
+  return res.end(file);
 }

@@ -37,19 +37,24 @@ import {
 } from '../controllers/admin.controller.js';
 
 const router = Router();
+
+// Vercel membatasi body request serverless di 4.5MB, jadi default unggahan 4MB
+// dan bisa diturunkan lewat UPLOAD_MAX_FILE_SIZE.
+const maxUploadBytes = Number(process.env.UPLOAD_MAX_FILE_SIZE ?? 4 * 1024 * 1024);
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024
+    fileSize: maxUploadBytes
   }
 });
 const materialUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }
+  limits: { fileSize: maxUploadBytes }
 });
 const tryoutUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 20 }
+  limits: { fileSize: maxUploadBytes, files: 20 }
 });
 
 router.use(requireAuth, requireRole(['ADMIN']));

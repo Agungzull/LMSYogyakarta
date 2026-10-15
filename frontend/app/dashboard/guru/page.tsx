@@ -252,14 +252,20 @@ export default function GuruDashboardPage() {
 
   async function handleResetRequest(id: string, nextStatus: 'APPROVED' | 'REJECTED') {
     try {
-      await apiRequest(`/api/guru/reset-requests/${id}`, {
+      const result = await apiRequest<{ data: { temporaryPassword?: string } }>(`/api/guru/reset-requests/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: nextStatus })
       });
 
       const refreshed = await apiRequest<{ data: ResetRequest[] }>('/api/guru/reset-requests');
       setResetRequests(refreshed.data);
-      setStatusMessage(`Permintaan reset password ${nextStatus === 'APPROVED' ? 'disetujui' : 'ditolak'}.`);
+
+      const temporaryPassword = result.data?.temporaryPassword;
+      setStatusMessage(
+        nextStatus === 'APPROVED'
+          ? `Permintaan disetujui. Password sementara untuk siswa: ${temporaryPassword ?? '(tidak tersedia)'} — sampaikan langsung dan minta diganti saat login pertama.`
+          : 'Permintaan reset password ditolak.'
+      );
     } catch (error) {
       console.error(error);
       setStatusMessage(error instanceof Error ? error.message : 'Gagal memproses permintaan.');

@@ -12,4 +12,6 @@ backend/generated
 backend/uploads
 backend/prisma/dev.db
 backend/prisma/*.db
+.vercel
+*.tsbuildinfo
 .DS_Store

@@ -13,5 +13,5 @@
     "types": ["node"],
     "lib": ["ES2022"]
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "api/**/*.ts"]
 }

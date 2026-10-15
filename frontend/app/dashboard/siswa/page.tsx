@@ -188,7 +188,12 @@ export default function SiswaDashboardPage() {
       }));
 
       const imageEntries = loadedImages.filter((image): image is readonly [string, string] => image !== null);
-      if (!cancelled) setExplanationImageUrls((current) => ({ ...current, ...Object.fromEntries(imageEntries) }));
+      // Guard ini penting: tanpanya setState selalu menghasilkan objek baru walau
+      // tidak ada gambar baru, effect jadi berputar terus karena
+      // explanationImageUrls ikut jadi dependency.
+      if (!cancelled && imageEntries.length > 0) {
+        setExplanationImageUrls((current) => ({ ...current, ...Object.fromEntries(imageEntries) }));
+      }
     }
 
     void loadImages().catch((error: unknown) => {

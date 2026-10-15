@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
@@ -7,8 +6,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { hashPassword } from '../lib/password.js';
 import { socketState } from '../lib/socket-state.js';
-import { materialFilesDirectory, materialFilePath } from '../lib/material-file-storage.js';
-import { tryoutExplanationDirectory, tryoutExplanationFilePath } from '../lib/tryout-explanation-storage.js';
+import { removeMaterialFile, saveMaterialFile } from '../lib/material-file-storage.js';
+import { removeExplanationImage, saveExplanationImage } from '../lib/tryout-explanation-storage.js';
 
 const VALID_CLASS_NAMES = ['9A', '9B', '9C', '9D', '9E', '9F', '9G'];
 const CONFUSING_CHARS = '0oO1liI';
@@ -1225,13 +1224,11 @@ export async function createMaterial(req: Request, res: Response) {
   }
 
   const id = crypto.randomUUID();
-  const filePath = materialFilePath(id);
   const fileUrl = parsed.data.type === 'PDF' ? `/api/content/materials/${id}/file` : parsed.data.fileUrl!;
 
   try {
     if (req.file) {
-      await mkdir(materialFilesDirectory, { recursive: true });
-      await writeFile(filePath, req.file.buffer, { flag: 'wx' });
+      await saveMaterialFile(id, req.file.buffer);
     }
 
     const material = await prisma.material.create({
@@ -1251,7 +1248,7 @@ export async function createMaterial(req: Request, res: Response) {
 
     return res.status(201).json({ success: true, message: 'Materi berhasil dibuat', data: material });
   } catch (error) {
-    if (req.file) await rm(filePath, { force: true });
+    if (req.file) await removeMaterialFile(id);
     console.error(error);
     return res.status(500).json({ success: false, message: 'Materi gagal disimpan' });
   }
@@ -1298,7 +1295,7 @@ export async function deleteMaterial(req: Request, res: Response) {
   }
 
   await prisma.material.delete({ where: { id } });
-  await rm(materialFilePath(id), { force: true });
+  await removeMaterialFile(id);
   return res.json({ success: true, message: 'Materi berhasil dihapus' });
 }
 
@@ -1643,9 +1640,8 @@ export async function createTryout(req: Request, res: Response) {
   const savedFilenames = imageExtensions.map((extension) => `${crypto.randomUUID()}.${extension}`);
   try {
     if (images.length > 0) {
-      await mkdir(tryoutExplanationDirectory, { recursive: true });
       await Promise.all(images.map((image, index) =>
-        writeFile(tryoutExplanationFilePath(savedFilenames[index]), image.buffer, { flag: 'wx' })
+        saveExplanationImage(savedFilenames[index], image.buffer)
       ));
     }
 
@@ -1696,7 +1692,7 @@ export async function createTryout(req: Request, res: Response) {
       }
     });
   } catch (error) {
-    await Promise.all(savedFilenames.map((filename) => rm(tryoutExplanationFilePath(filename), { force: true })));
+    await Promise.all(savedFilenames.map((filename) => removeExplanationImage(filename)));
     console.error('Gagal membuat TryOut:', error);
     return res.status(500).json({ success: false, message: 'TryOut gagal disimpan. Periksa data lalu coba lagi.' });
   }

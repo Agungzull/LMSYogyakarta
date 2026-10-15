@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { siteConfig } from '@/src/config/site';
+
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +15,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    // Cookie hanya ada kalau sesi masih berlaku; middleware menghapusnya saat token
+    // kedaluwarsa, jadi redirect ini tidak akan memantul bolak-balik ke /login.
+    if (typeof document !== 'undefined' && /(?:^|;\s*)lms_access_token=/.test(document.cookie)) {
+      router.replace('/dashboard');
+    }
+  }, [router]);
+
   function setSessionCookies(accessToken: string, refreshToken: string) {
     if (typeof document === 'undefined') return;
 
@@ -20,8 +30,8 @@ export default function LoginPage() {
       document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
     };
 
-    setCookie('lms_access_token', accessToken, 15 * 60);
-    setCookie('lms_refresh_token', refreshToken, 7 * 24 * 60 * 60);
+    setCookie('lms_access_token', accessToken, SESSION_MAX_AGE);
+    setCookie('lms_refresh_token', refreshToken, SESSION_MAX_AGE);
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -92,6 +102,7 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Masukkan username atau email"
                 className="w-full"
+                autoComplete="username"
                 required
               />
             </div>
@@ -105,6 +116,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Masukkan password"
                   className="w-full pr-11"
+                  autoComplete="current-password"
                   required
                 />
                 <button

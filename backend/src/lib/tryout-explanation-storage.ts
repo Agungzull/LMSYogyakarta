@@ -1,8 +1,24 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readObject, removeObject, saveObject } from './object-storage.js';
 
-export const tryoutExplanationDirectory = fileURLToPath(new URL('../../uploads/tryout-explanations/', import.meta.url));
+export function explanationObjectPath(filename: string): string {
+  return `tryout-explanations/${filename}`;
+}
 
-export function tryoutExplanationFilePath(filename: string) {
-  return path.join(tryoutExplanationDirectory, filename);
+export function explanationContentType(filename: string): string {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+export async function saveExplanationImage(filename: string, buffer: Buffer): Promise<void> {
+  await saveObject(explanationObjectPath(filename), buffer, explanationContentType(filename));
+}
+
+export async function readExplanationImage(filename: string): Promise<Buffer | null> {
+  return readObject(explanationObjectPath(filename));
+}
+
+export async function removeExplanationImage(filename: string): Promise<void> {
+  await removeObject(explanationObjectPath(filename));
 }
