@@ -1,18 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiRequest } from '@/lib/api';
+import { API_URL, apiRequest } from '@/lib/api';
 
 type ClassItem = { id: string; name: string };
 type QuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE';
 type QuestionDraft = {
+  id?: string;
   text: string;
   type: QuestionType;
   options: string[];
   correctOptions: string[];
   points: string;
   explanation: string;
+  questionImage: File | null;
+  existingImageUrl: string | null;
   explanationImage: File | null;
+  existingExplanationImageUrl: string | null;
 };
 type TryoutItem = {
   id: string;
@@ -20,6 +24,7 @@ type TryoutItem = {
   durationMinutes: number;
   startAt: string;
   endAt: string;
+  classId?: string;
   className: string;
   questionCount: number;
   accessCode: string;
@@ -28,9 +33,40 @@ type TryoutItem = {
   certificateSignerName: string;
   certificateSignerTitle: string;
 };
+type TryoutDetail = {
+  id: string;
+  title: string;
+  accessCode: string;
+  classId: string;
+  className: string;
+  durationMinutes: number;
+  startAt: string;
+  endAt: string;
+  shuffleQuestions: boolean;
+  certificateEnabled: boolean;
+  certificateMinimumScore: number;
+  certificateSignerName: string;
+  certificateSignerTitle: string;
+  questions: Array<{
+    id: string;
+    type: QuestionType;
+    text: string;
+    imageUrl: string | null;
+    options: string[];
+    correctAnswer: string;
+    points: number;
+    explanation: string | null;
+    explanationImageUrl: string | null;
+  }>;
+};
 
 function toDateTimeInput(value: Date) {
   return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function getFullImageUrl(url: string | null) {
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${API_URL}${url}`;
 }
 
 function createQuestion(): QuestionDraft {
@@ -41,7 +77,10 @@ function createQuestion(): QuestionDraft {
     correctOptions: ['0'],
     points: '1',
     explanation: '',
-    explanationImage: null
+    questionImage: null,
+    existingImageUrl: null,
+    explanationImage: null,
+    existingExplanationImageUrl: null
   };
 }
 
@@ -54,11 +93,16 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
   const [certificateMinimumScore, setCertificateMinimumScore] = useState('0');
   const [certificateSignerName, setCertificateSignerName] = useState('');
   const [certificateSignerTitle, setCertificateSignerTitle] = useState('');
+
+  const [editingTryoutId, setEditingTryoutId] = useState<string | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
   const [editingCertificateId, setEditingCertificateId] = useState<string | null>(null);
   const [editingCertificateEnabled, setEditingCertificateEnabled] = useState(true);
   const [editingCertificateMinimumScore, setEditingCertificateMinimumScore] = useState('0');
   const [editingCertificateSignerName, setEditingCertificateSignerName] = useState('');
   const [editingCertificateSignerTitle, setEditingCertificateSignerTitle] = useState('');
+
   const [startAt, setStartAt] = useState(() => {
     const date = new Date();
     date.setMinutes(date.getMinutes() + 5);
@@ -93,6 +137,24 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
     if (!classId && classes[0]) setClassId(classes[0].id);
   }, [classId, classes]);
 
+  function resetForm() {
+    setEditingTryoutId(null);
+    setTitle('');
+    setDurationMinutes('60');
+    if (classes[0]) setClassId(classes[0].id);
+    const date = new Date();
+    date.setMinutes(date.getMinutes() + 5);
+    setStartAt(toDateTimeInput(date));
+    const dateEnd = new Date();
+    dateEnd.setHours(dateEnd.getHours() + 2);
+    setEndAt(toDateTimeInput(dateEnd));
+    setCertificateEnabled(true);
+    setCertificateMinimumScore('0');
+    setCertificateSignerName('');
+    setCertificateSignerTitle('');
+    setQuestions([createQuestion()]);
+  }
+
   function updateQuestion(index: number, update: Partial<QuestionDraft>) {
     setQuestions((current) => current.map((question, questionIndex) =>
       questionIndex === index ? { ...question, ...update } : question
@@ -117,6 +179,83 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
     }));
   }
 
+  async function handleEditTryout(tryoutId: string) {
+    setLoadingDetail(true);
+    setMessage('');
+    try {
+      const response = await apiRequest<{ data: TryoutDetail }>(`/api/admin/tryouts/${tryoutId}`);
+      const data = response.data;
+      setEditingTryoutId(data.id);
+      setTitle(data.title);
+      setClassId(data.classId);
+      setDurationMinutes(String(data.durationMinutes));
+      setStartAt(toDateTimeInput(new Date(data.startAt)));
+      setEndAt(toDateTimeInput(new Date(data.endAt)));
+      setCertificateEnabled(data.certificateEnabled);
+      setCertificateMinimumScore(String(data.certificateMinimumScore));
+      setCertificateSignerName(data.certificateSignerName);
+      setCertificateSignerTitle(data.certificateSignerTitle);
+
+      setQuestions(data.questions.map((q) => {
+        let correctOptions: string[] = [];
+        if (q.type === 'SINGLE_CHOICE') {
+          const idx = q.options.indexOf(q.correctAnswer);
+          correctOptions = idx >= 0 ? [String(idx)] : ['0'];
+        } else {
+          try {
+            const parsed = JSON.parse(q.correctAnswer);
+            if (Array.isArray(parsed)) {
+              correctOptions = parsed.map((ans) => String(q.options.indexOf(ans))).filter((idx) => idx !== '-1');
+            }
+          } catch {
+            correctOptions = ['0', '1'];
+          }
+        }
+
+        return {
+          id: q.id,
+          text: q.text,
+          type: q.type,
+          options: q.options.length ? q.options : ['', '', '', ''],
+          correctOptions: correctOptions.length ? correctOptions : ['0'],
+          points: String(q.points ?? 1),
+          explanation: q.explanation ?? '',
+          questionImage: null,
+          existingImageUrl: q.imageUrl,
+          explanationImage: null,
+          existingExplanationImageUrl: q.explanationImageUrl
+        };
+      }));
+
+      const formElem = document.getElementById('tryout-form-section');
+      if (formElem) formElem.scrollIntoView({ behavior: 'smooth' });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gagal memuat detail TryOut untuk diedit.');
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  async function handleDeleteTryout(tryoutId: string, tryoutTitle: string) {
+    if (!window.confirm(`Hapus TryOut "${tryoutTitle}"? Seluruh soal, gambar, dan riwayat ujian siswa akan dihapus secara permanen.`)) {
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    try {
+      await apiRequest(`/api/admin/tryouts/${tryoutId}`, { method: 'DELETE' });
+      setMessage(`TryOut "${tryoutTitle}" berhasil dihapus.`);
+      if (editingTryoutId === tryoutId) {
+        resetForm();
+      }
+      await loadTryouts();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gagal menghapus TryOut.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -124,17 +263,26 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
 
     try {
       const formData = new FormData();
-      let imageCount = 0;
+      let questionImageCount = 0;
+      let explanationImageCount = 0;
+
       const questionPayload = questions.map((question) => {
         const options = question.options.map((option) => option.trim()).filter(Boolean);
         const correctAnswers = question.correctOptions
           .map(Number)
           .map((optionIndex) => question.options[optionIndex]?.trim())
           .filter((option): option is string => Boolean(option));
-        const explanationImageIndex = question.explanationImage ? imageCount++ : undefined;
 
+        let questionImageIndex: number | undefined;
+        if (question.questionImage) {
+          formData.append('questionImages', question.questionImage);
+          questionImageIndex = questionImageCount++;
+        }
+
+        let explanationImageIndex: number | undefined;
         if (question.explanationImage) {
           formData.append('explanationImages', question.explanationImage);
+          explanationImageIndex = explanationImageCount++;
         }
 
         return {
@@ -146,9 +294,13 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
             : JSON.stringify(correctAnswers),
           points: Number(question.points),
           explanation: question.explanation.trim() || undefined,
-          ...(explanationImageIndex === undefined ? {} : { explanationImageIndex })
+          existingImageUrl: question.existingImageUrl ?? null,
+          existingExplanationImageUrl: question.existingExplanationImageUrl ?? null,
+          ...(questionImageIndex !== undefined ? { questionImageIndex } : {}),
+          ...(explanationImageIndex !== undefined ? { explanationImageIndex } : {})
         };
       });
+
       formData.append('payload', JSON.stringify({
         title,
         classId,
@@ -162,18 +314,21 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
         questions: questionPayload
       }));
 
-      await apiRequest('/api/admin/tryouts', {
-        method: 'POST',
-        body: formData
-      });
+      if (editingTryoutId) {
+        await apiRequest(`/api/admin/tryouts/${editingTryoutId}`, {
+          method: 'PUT',
+          body: formData
+        });
+        setMessage('TryOut beserta perubahan soal berhasil disimpan.');
+      } else {
+        await apiRequest('/api/admin/tryouts', {
+          method: 'POST',
+          body: formData
+        });
+        setMessage('TryOut beserta soal berhasil ditambahkan untuk kelas yang dipilih.');
+      }
 
-      setMessage('TryOut beserta soal berhasil ditambahkan untuk kelas yang dipilih.');
-      setTitle('');
-      setQuestions([createQuestion()]);
-      setCertificateEnabled(true);
-      setCertificateMinimumScore('0');
-      setCertificateSignerName('');
-      setCertificateSignerTitle('');
+      resetForm();
       await loadTryouts();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'TryOut gagal disimpan.');
@@ -214,13 +369,45 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">TryOut &amp; Soal</h2>
-        <p className="mt-1 text-sm text-slate-500">Buat jadwal ujian dan bagikan kode akses kepada siswa yang berhak mengerjakan.</p>
+    <section id="tryout-form-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">
+            {editingTryoutId ? 'Edit TryOut & Soal' : 'TryOut & Soal'}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {editingTryoutId
+              ? 'Perbarui informasi ujian, tambahkan / edit pertanyaan, dan kelola gambar soal serta pembahasan.'
+              : 'Buat jadwal ujian baru dan bagikan kode akses kepada siswa yang berhak mengerjakan.'}
+          </p>
+        </div>
+        {editingTryoutId ? (
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">
+              Mode Edit Aktif
+            </span>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+            >
+              Batal Edit / Buat Baru
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      {message ? <p role="status" className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{message}</p> : null}
+      {loadingDetail ? (
+        <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          Memuat data TryOut untuk diedit...
+        </p>
+      ) : null}
+
+      {message ? (
+        <p role="status" className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          {message}
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="mt-5 space-y-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -271,21 +458,76 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
           <p className="mt-2 text-xs text-slate-500">Siswa dapat mencetak sertifikat jika nilainya mencapai persentase minimum.</p>
         </fieldset>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           {questions.map((question, questionIndex) => (
-            <fieldset key={questionIndex} className="rounded-xl border border-slate-200 p-4">
+            <fieldset key={questionIndex} className="rounded-xl border border-slate-200 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <legend className="font-semibold text-slate-800">Soal {questionIndex + 1}</legend>
                 {questions.length > 1 ? (
-                  <button type="button" onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+                  <button type="button" onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))} className="bg-rose-50 text-xs font-semibold text-rose-600 hover:bg-rose-100">
                     Hapus soal
                   </button>
                 ) : null}
               </div>
+
+              {/* Teks Pertanyaan */}
               <label className="mt-3 block text-sm text-slate-600">
                 Pertanyaan
                 <textarea value={question.text} onChange={(event) => updateQuestion(questionIndex, { text: event.target.value })} className="mt-1 min-h-20 w-full" minLength={2} required />
               </label>
+
+              {/* Gambar Soal */}
+              <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3">
+                <p className="text-sm font-medium text-slate-700">Gambar Soal (opsional)</p>
+                {question.existingImageUrl && !question.questionImage ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <img
+                      src={getFullImageUrl(question.existingImageUrl)}
+                      alt={`Gambar soal ${questionIndex + 1}`}
+                      className="max-h-40 rounded-lg border border-slate-200 bg-white object-contain p-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateQuestion(questionIndex, { existingImageUrl: null })}
+                      className="rounded bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                    >
+                      Hapus gambar tersimpan
+                    </button>
+                  </div>
+                ) : null}
+
+                {question.questionImage ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <img
+                      src={URL.createObjectURL(question.questionImage)}
+                      alt="Preview gambar soal baru"
+                      className="max-h-40 rounded-lg border border-blue-300 bg-white object-contain p-1"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-blue-800">File baru: {question.questionImage.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => updateQuestion(questionIndex, { questionImage: null })}
+                        className="mt-1 text-xs text-rose-600 hover:underline"
+                      >
+                        Batal ganti gambar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="mt-2 block text-xs text-slate-600">
+                  {question.existingImageUrl ? 'Ganti file gambar soal:' : 'Pilih file gambar soal (PNG, JPEG, WebP, maks. 5 MB):'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => updateQuestion(questionIndex, { questionImage: event.target.files?.[0] ?? null })}
+                    className="mt-1 block w-full text-xs"
+                  />
+                </label>
+              </div>
+
+              {/* Tipe Soal */}
               <label className="mt-3 block text-sm text-slate-600">
                 Tipe soal
                 <select
@@ -303,6 +545,8 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
                   <option value="MULTIPLE_CHOICE">Pilihan ganda kompleks (lebih dari satu jawaban)</option>
                 </select>
               </label>
+
+              {/* Opsi Pilihan */}
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {question.options.map((option, optionIndex) => (
                   <label key={optionIndex} className="text-sm text-slate-600">
@@ -311,6 +555,8 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
                   </label>
                 ))}
               </div>
+
+              {/* Jawaban Benar & Bobot */}
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <fieldset className="text-sm text-slate-600">
                   <legend>{question.type === 'MULTIPLE_CHOICE' ? 'Jawaban benar (pilih semua yang benar)' : 'Jawaban benar'}</legend>
@@ -343,20 +589,63 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
                   <input type="number" min="1" value={question.points} onChange={(event) => updateQuestion(questionIndex, { points: event.target.value })} className="mt-1 w-full" required />
                 </label>
               </div>
+
+              {/* Pembahasan */}
               <label className="mt-3 block text-sm text-slate-600">
                 Pembahasan (opsional)
                 <textarea value={question.explanation} onChange={(event) => updateQuestion(questionIndex, { explanation: event.target.value })} className="mt-1 min-h-16 w-full" />
               </label>
-              <label className="mt-3 block text-sm text-slate-600">
-                Gambar pembahasan (opsional, PNG/JPEG/WebP, maks. 5 MB)
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => updateQuestion(questionIndex, { explanationImage: event.target.files?.[0] ?? null })}
-                  className="mt-1 w-full"
-                />
-                {question.explanationImage ? <span className="mt-1 block text-xs text-slate-500">{question.explanationImage.name}</span> : null}
-              </label>
+
+              {/* Gambar Pembahasan */}
+              <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3">
+                <p className="text-sm font-medium text-slate-700">Gambar Pembahasan (opsional)</p>
+                {question.existingExplanationImageUrl && !question.explanationImage ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <img
+                      src={getFullImageUrl(question.existingExplanationImageUrl)}
+                      alt={`Gambar pembahasan ${questionIndex + 1}`}
+                      className="max-h-40 rounded-lg border border-slate-200 bg-white object-contain p-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateQuestion(questionIndex, { existingExplanationImageUrl: null })}
+                      className="rounded bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                    >
+                      Hapus gambar pembahasan tersimpan
+                    </button>
+                  </div>
+                ) : null}
+
+                {question.explanationImage ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <img
+                      src={URL.createObjectURL(question.explanationImage)}
+                      alt="Preview gambar pembahasan baru"
+                      className="max-h-40 rounded-lg border border-blue-300 bg-white object-contain p-1"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-blue-800">File baru: {question.explanationImage.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => updateQuestion(questionIndex, { explanationImage: null })}
+                        className="mt-1 text-xs text-rose-600 hover:underline"
+                      >
+                        Batal ganti gambar pembahasan
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="mt-2 block text-xs text-slate-600">
+                  {question.existingExplanationImageUrl ? 'Ganti file gambar pembahasan:' : 'Pilih file gambar pembahasan (PNG, JPEG, WebP, maks. 5 MB):'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => updateQuestion(questionIndex, { explanationImage: event.target.files?.[0] ?? null })}
+                    className="mt-1 block w-full text-xs"
+                  />
+                </label>
+              </div>
             </fieldset>
           ))}
         </div>
@@ -366,8 +655,13 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
             Tambah soal
           </button>
           <button type="submit" disabled={saving || classes.length === 0} className="disabled:cursor-not-allowed disabled:opacity-50">
-            {saving ? 'Menyimpan...' : 'Simpan TryOut'}
+            {saving ? 'Menyimpan...' : editingTryoutId ? 'Simpan Perubahan TryOut' : 'Simpan TryOut'}
           </button>
+          {editingTryoutId ? (
+            <button type="button" onClick={resetForm} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+              Batal Edit
+            </button>
+          ) : null}
         </div>
       </form>
 
@@ -378,7 +672,7 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
         ) : (
           <div className="mt-3 space-y-2">
             {tryouts.map((tryout) => (
-              <div key={tryout.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-4 py-3">
+              <div key={tryout.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-4">
                 <div>
                   <p className="font-medium text-slate-800">{tryout.title}</p>
                   <p className="text-sm text-slate-500">{tryout.className} · {tryout.questionCount} soal · {tryout.durationMinutes} menit</p>
@@ -388,12 +682,31 @@ export default function TryoutsSection({ classes }: { classes: ClassItem[] }) {
                     {tryout.certificateSignerName ? ` · ${tryout.certificateSignerName}` : ''}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <p className="text-xs text-slate-500">{new Date(tryout.startAt).toLocaleString('id-ID')}</p>
-                  <button type="button" onClick={() => editCertificateSettings(tryout)} className="bg-slate-200 text-sm text-slate-800 hover:bg-slate-300">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="mr-2 text-xs text-slate-500">{new Date(tryout.startAt).toLocaleString('id-ID')}</p>
+                  <button
+                    type="button"
+                    onClick={() => void handleEditTryout(tryout.id)}
+                    className="bg-blue-600 text-xs font-semibold text-white hover:bg-blue-700"
+                  >
+                    Edit TryOut &amp; Soal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => editCertificateSettings(tryout)}
+                    className="bg-slate-200 text-xs font-medium text-slate-800 hover:bg-slate-300"
+                  >
                     Atur sertifikat
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteTryout(tryout.id, tryout.title)}
+                    className="bg-rose-50 text-xs font-semibold text-rose-600 hover:bg-rose-100"
+                  >
+                    Hapus
+                  </button>
                 </div>
+
                 {editingCertificateId === tryout.id ? (
                   <div className="w-full space-y-3 rounded-lg border border-slate-200 bg-white p-4">
                     <label className="flex items-center gap-2 text-sm text-slate-700">

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { readMaterialFile } from '../lib/material-file-storage.js';
-import { explanationContentType, readExplanationImage } from '../lib/tryout-explanation-storage.js';
+import { explanationContentType, readExplanationImage, readQuestionImage } from '../lib/tryout-explanation-storage.js';
 
 export async function getMaterialFile(req: Request, res: Response) {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -61,35 +61,30 @@ export async function getMaterialFile(req: Request, res: Response) {
   return res.end(file);
 }
 
+export async function getTryoutQuestionImage(req: Request, res: Response) {
+  const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/i.test(filename)) {
+    return res.status(404).json({ success: false, message: 'Gambar soal tidak ditemukan' });
+  }
+
+  const file = await readQuestionImage(filename);
+  if (!file) {
+    return res.status(404).json({ success: false, message: 'File gambar soal tidak ditemukan' });
+  }
+
+  res.setHeader('Content-Type', explanationContentType(filename));
+  res.setHeader('Content-Length', file.length);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.end(file);
+}
+
 export async function getTryoutExplanationImage(req: Request, res: Response) {
   const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/i.test(filename)) {
     return res.status(404).json({ success: false, message: 'Gambar pembahasan tidak ditemukan' });
-  }
-
-  const imageUrl = `/api/content/tryout-explanations/${filename}`;
-  const question = await prisma.question.findFirst({
-    where: { explanationImageUrl: imageUrl },
-    select: { tryoutId: true }
-  });
-  if (!question) {
-    return res.status(404).json({ success: false, message: 'Gambar pembahasan tidak ditemukan' });
-  }
-
-  if (req.user?.role === 'SISWA') {
-    const student = await prisma.student.findUnique({
-      where: { userId: req.user.id },
-      select: { id: true }
-    });
-    const completedAttempt = student
-      ? await prisma.tryoutAttempt.findFirst({
-        where: { studentId: student.id, tryoutId: question.tryoutId, status: 'SUBMITTED' },
-        select: { id: true }
-      })
-      : null;
-    if (!completedAttempt) {
-      return res.status(403).json({ success: false, message: 'Gambar pembahasan hanya tersedia setelah TryOut dikumpulkan' });
-    }
   }
 
   const file = await readExplanationImage(filename);
@@ -99,7 +94,9 @@ export async function getTryoutExplanationImage(req: Request, res: Response) {
 
   res.setHeader('Content-Type', explanationContentType(filename));
   res.setHeader('Content-Length', file.length);
-  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.end(file);
 }

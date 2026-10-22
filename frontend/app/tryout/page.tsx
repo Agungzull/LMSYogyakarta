@@ -1,7 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiRequest } from '@/lib/api';
+import { API_URL, apiRequest } from '@/lib/api';
+
+function getFullImageUrl(url: string | null) {
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${API_URL}${url}`;
+}
 
 type TryoutItem = {
   id: string;
@@ -181,7 +186,7 @@ export default function TryoutPage() {
                     <h2 className="font-semibold">Soal {index + 1}</h2>
                     {question.type === 'MULTIPLE_CHOICE' ? <p className="mt-1 text-xs text-slate-500">Pilih semua jawaban yang benar.</p> : null}
                     <p className="mt-3 whitespace-pre-wrap text-slate-800">{question.text}</p>
-                    {question.imageUrl ? <img src={question.imageUrl} alt={`Ilustrasi soal ${index + 1}`} className="mt-3 max-h-72 rounded-lg object-contain" /> : null}
+                    {question.imageUrl ? <img src={getFullImageUrl(question.imageUrl)} alt={`Ilustrasi soal ${index + 1}`} className="mt-3 max-h-72 rounded-lg object-contain" /> : null}
                     <div className="mt-4 space-y-2">
                       {question.options.map((option, optionIndex) => (
                         <label key={`${question.id}-${optionIndex}`} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 hover:bg-slate-50">

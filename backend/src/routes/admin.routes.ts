@@ -12,6 +12,7 @@ import {
   deleteMaterial,
   deleteStudent,
   deleteTeacher,
+  deleteTryout,
   getClasses,
   getMaterials,
   getResetRequests,
@@ -19,6 +20,7 @@ import {
   getStudents,
   getSubjects,
   getTeachers,
+  getTryoutDetail,
   getTryoutMonitoring,
   getTryouts,
   getStudentReports,
@@ -26,6 +28,7 @@ import {
   importStudents,
   importTeachers,
   createTryout,
+  updateTryout,
   resetUserPassword,
   updateClass,
   updateMaterial,
@@ -54,7 +57,7 @@ const materialUpload = multer({
 });
 const tryoutUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: maxUploadBytes, files: 20 }
+  limits: { fileSize: maxUploadBytes, files: 100 }
 });
 
 router.use(requireAuth, requireRole(['ADMIN']));
@@ -95,7 +98,10 @@ router.post('/users/:id/reset-password', resetUserPassword);
 router.post('/users/credentials/export', exportNewAccountCredentials);
 
 router.get('/tryouts', getTryouts);
-router.post('/tryouts', tryoutUpload.array('explanationImages', 20), createTryout);
+router.get('/tryouts/:id', getTryoutDetail);
+router.post('/tryouts', tryoutUpload.any(), createTryout);
+router.put('/tryouts/:id', tryoutUpload.any(), updateTryout);
+router.delete('/tryouts/:id', deleteTryout);
 router.patch('/tryouts/:id/certificate', updateTryoutCertificateSettings);
 router.get('/tryouts/:id/monitoring', getTryoutMonitoring);
 
